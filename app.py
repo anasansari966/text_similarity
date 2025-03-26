@@ -1,5 +1,3 @@
-# app.py
-
 from fastapi import FastAPI
 from pydantic import BaseModel
 import joblib
@@ -46,7 +44,7 @@ def jaccard_similarity(a, b):
     a_set, b_set = set(a), set(b)
     return len(a_set & b_set) / len(a_set | b_set) if a_set | b_set else 0
 
-@app.post("/")
+@app.post("/similarity")
 def get_similarity(data: TextPair):
     tokens1 = clean_text(data.text1)
     tokens2 = clean_text(data.text2)
