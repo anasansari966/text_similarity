@@ -12,7 +12,8 @@ scaler = joblib.load("similarity_scaler.pkl")
 
 # Load word2vec model
 from gensim.models import KeyedVectors
-word2vec = KeyedVectors.load_word2vec_format("GoogleNews-vectors-negative300.bin", binary=True)
+# word2vec = KeyedVectors.load_word2vec_format("GoogleNews-vectors-negative300.bin", binary=True)
+word2vec = KeyedVectors.load("small_word2vec.kv")
 
 # Minimal preprocessing
 import re
