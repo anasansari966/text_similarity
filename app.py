@@ -5,35 +5,42 @@ from pydantic import BaseModel
 import joblib
 import numpy as np
 from sklearn.metrics.pairwise import cosine_similarity
-
-# Load saved model and scaler
-model = joblib.load("similarity_model.pkl")
-scaler = joblib.load("similarity_scaler.pkl")
-
-# Load word2vec model
 from gensim.models import KeyedVectors
-# word2vec = KeyedVectors.load_word2vec_format("GoogleNews-vectors-negative300.bin", binary=True)
-word2vec = KeyedVectors.load("small_word2vec.kv")
-
-# Minimal preprocessing
+import nltk
+import os
 import re
 import string
-import nltk
 from nltk.tokenize import word_tokenize
 from nltk.corpus import stopwords
 from nltk.stem import WordNetLemmatizer
 
-nltk.download('punkt')
-nltk.download('stopwords')
-nltk.download('wordnet')
+# ========== NLTK SETUP FOR CLOUD ==========
+# Create local nltk_data folder if not exists
+nltk_data_path = os.path.join(os.path.dirname(__file__), "nltk_data")
+if not os.path.exists(nltk_data_path):
+    os.makedirs(nltk_data_path)
 
-# API setup
+# Download necessary data files to that directory
+nltk.download("punkt", download_dir=nltk_data_path)
+nltk.download("stopwords", download_dir=nltk_data_path)
+nltk.download("wordnet", download_dir=nltk_data_path)
+
+# Point nltk to local data directory
+nltk.data.path.append(nltk_data_path)
+
+# ========== LOAD ARTIFACTS ==========
+model = joblib.load("similarity_model.pkl")
+scaler = joblib.load("similarity_scaler.pkl")
+word2vec = KeyedVectors.load("small_word2vec.kv")
+
+# ========== FASTAPI APP ==========
 app = FastAPI()
 
 class TextPair(BaseModel):
     text1: str
     text2: str
 
+# ========== UTILS ==========
 def clean_text(text):
     text = text.lower()
     text = re.sub(r"\d+", "", text)
@@ -53,6 +60,7 @@ def jaccard_similarity(a, b):
     a_set, b_set = set(a), set(b)
     return len(a_set & b_set) / len(a_set | b_set) if a_set | b_set else 0
 
+# ========== API ROUTE ==========
 @app.post("/similarity")
 def get_similarity(data: TextPair):
     tokens1 = clean_text(data.text1)
@@ -68,6 +76,6 @@ def get_similarity(data: TextPair):
 
     features = np.array([[cosine_sim, jaccard_sim, len_diff, len_ratio]])
     similarity_score = float(model.predict(features)[0])
-    similarity_score = max(0, min(1, similarity_score))
+    similarity_score = max(0, min(1, similarity_score))  # clip
 
     return {"similarity score": round(similarity_score, 3)}
