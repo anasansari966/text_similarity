@@ -11,17 +11,23 @@ from nltk.tokenize import word_tokenize
 from nltk.corpus import stopwords
 from nltk.stem import WordNetLemmatizer
 
-# Setup nltk data path (for deployment like Render)
+# ✅ Use existing nltk_data folder (no download or creation)
 nltk_data_path = os.path.join(os.path.dirname(__file__), "nltk_data")
 nltk.data.path.append(nltk_data_path)
 
-# Load artifacts
+# ✅ Load saved model and vectorizer
 model = joblib.load("similarity_model.pkl")
 scaler = joblib.load("similarity_scaler.pkl")
 word2vec = KeyedVectors.load("small_word2vec.kv")
 
 app = Flask(__name__)
 
+# ✅ Health check endpoint
+@app.route("/test", methods=["GET"])
+def test_route():
+    return jsonify({"status": "success", "message": "API is running ✅"})
+
+# ✅ Text preprocessing
 def clean_text(text):
     text = text.lower()
     text = re.sub(r"\d+", "", text)
@@ -31,6 +37,7 @@ def clean_text(text):
     tokens = [WordNetLemmatizer().lemmatize(w) for w in tokens]
     return tokens
 
+# ✅ Embedding and similarity features
 def embed(tokens):
     vectors = [word2vec[w] for w in tokens if w in word2vec]
     return np.mean(vectors, axis=0) if vectors else np.zeros(word2vec.vector_size)
@@ -39,6 +46,7 @@ def jaccard_similarity(a, b):
     a_set, b_set = set(a), set(b)
     return len(a_set & b_set) / len(a_set | b_set) if a_set | b_set else 0
 
+# ✅ Main similarity route
 @app.route("/similarity", methods=["POST"])
 def get_similarity():
     data = request.get_json()
