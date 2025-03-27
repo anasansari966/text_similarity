@@ -26,14 +26,18 @@ class TextPair(BaseModel):
     text1: str
     text2: str
 
+from nltk.tokenize import TreebankWordTokenizer
+word_tokenizer = TreebankWordTokenizer()
+
 def clean(text):
     text = text.lower()
     text = re.sub(r'\d+', '', text)
     text = text.translate(str.maketrans('', '', string.punctuation))
-    tokens = word_tokenize(text)
+    tokens = word_tokenizer.tokenize(text)  # ✅ Replaces word_tokenize
     tokens = [t for t in tokens if t not in stopwords.words("english")]
     tokens = [WordNetLemmatizer().lemmatize(t) for t in tokens]
     return " ".join(tokens)
+
 
 def jaccard_sim(a, b):
     set1, set2 = set(a.split()), set(b.split())
