@@ -1,37 +1,70 @@
-import tensorflow as tf
 import pandas as pd
-import tensorflow_hub as hub
-from numpy import dot
-from numpy.linalg import norm
+import numpy as np
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.ensemble import GradientBoostingRegressor
+from sklearn.model_selection import train_test_split
+from sklearn.metrics.pairwise import cosine_similarity
+from sklearn.metrics import mean_squared_error
+from sklearn.preprocessing import MinMaxScaler
+import nltk
+import re
+import joblib
+from nltk.corpus import stopwords
 
-# Load Universal Sentence Encoder model
-module_url = "https://tfhub.dev/google/universal-sentence-encoder/4"
-model = hub.load(module_url)
+nltk.download('stopwords')
+stop_words = set(stopwords.words('english'))
 
-def embed(input):
-    return model(input)
+# Load dataset
+df = pd.read_csv("DataNeuron_Text_Similarity.csv").dropna()
 
-# Read dataset
-Data = pd.read_csv("DataNeuron_Text_Similarity.csv")
+# Clean text
+def clean_text(text):
+    text = re.sub(r'[^a-zA-Z0-9 ]', '', text.lower())
+    return ' '.join([w for w in text.split() if w not in stop_words])
 
-# Compute cosine similarity
-similarity_scores = []
-for i in range(len(Data)):
-    sentences = [Data['text1'][i], Data['text2'][i]]
-    embeddings = embed(sentences)
-    vectors = tf.make_ndarray(tf.make_tensor_proto(embeddings))
-    cos_sim = dot(vectors[0], vectors[1]) / (norm(vectors[0]) * norm(vectors[1]))
-    similarity_scores.append(cos_sim)
+df['text1_clean'] = df['text1'].apply(clean_text)
+df['text2_clean'] = df['text2'].apply(clean_text)
 
-# Add similarity scores to dataframe
-Data['Similarity_Score'] = similarity_scores
+# TF-IDF features
+tfidf = TfidfVectorizer()
+all_text = df['text1_clean'].tolist() + df['text2_clean'].tolist()
+tfidf_matrix = tfidf.fit_transform(all_text)
+vec1 = tfidf_matrix[:len(df)]
+vec2 = tfidf_matrix[len(df):]
+cosine = [cosine_similarity(vec1[i], vec2[i])[0][0] for i in range(len(df))]
 
-# Normalize scores to range [0, 1]
-Data['Similarity_Score'] = Data['Similarity_Score'] + 1  # from [-1, 1] to [0, 2]
-Data['Similarity_Score'] = Data['Similarity_Score'] / Data['Similarity_Score'].abs().max()
+# Jaccard similarity
+def jaccard_sim(a, b):
+    a, b = set(a.split()), set(b.split())
+    return len(a & b) / len(a | b) if a | b else 0.0
 
-# Create submission with auto-generated Unique_ID
-Data['Unique_ID'] = range(len(Data))
-Submission = Data[['Unique_ID', 'Similarity_Score']]
-Submission.set_index("Unique_ID", inplace=True)
-Submission.to_csv("Submission.csv")
+jaccard = [jaccard_sim(a, b) for a, b in zip(df['text1_clean'], df['text2_clean'])]
+
+# Length difference
+len_diff = [abs(len(a.split()) - len(b.split())) for a, b in zip(df['text1_clean'], df['text2_clean'])]
+
+# Features
+X = pd.DataFrame({
+    'cosine': cosine,
+    'jaccard': jaccard,
+    'len_diff': len_diff
+})
+
+# Generate pseudo-labels from cosine similarity for unsupervised setting
+scaler = MinMaxScaler()
+y = scaler.fit_transform(np.array(cosine).reshape(-1, 1)).flatten()
+
+# Split
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+# Train model
+model = GradientBoostingRegressor(n_estimators=100, random_state=42)
+model.fit(X_train, y_train)
+
+# Evaluate
+rmse = mean_squared_error(y_test, model.predict(X_test)) ** 0.5
+print(f"RMSE: {rmse:.4f}")
+
+# Save model and vectorizer
+joblib.dump(model, "model.pkl")
+joblib.dump(tfidf, "tfidf.pkl")

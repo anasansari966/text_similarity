@@ -1,4 +1,6 @@
-fastapi
-uvicorn
-tensorflow
-tensorflow-hub
+Flask
+scikit-learn
+numpy
+pandas
+nltk
+joblib

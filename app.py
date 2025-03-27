@@ -1,34 +1,48 @@
-import uvicorn
-from fastapi import FastAPI, Request
-from pydantic import BaseModel
-import tensorflow_hub as hub
-import tensorflow as tf
-from numpy import dot
-from numpy.linalg import norm
+from flask import Flask, request, jsonify
+import joblib
+import numpy as np
+import re
+import nltk
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
+from nltk.corpus import stopwords
 
-# Load USE model once at startup
-model = hub.load("https://tfhub.dev/google/universal-sentence-encoder/4")
+nltk.download('stopwords')
+stop_words = set(stopwords.words('english'))
 
-# FastAPI app
-app = FastAPI()
+app = Flask(__name__)
 
-# Request schema
-class TextPair(BaseModel):
-    text1: str
-    text2: str
+# Load model and vectorizer
+model = joblib.load("model.pkl")
+tfidf = joblib.load("tfidf.pkl")
 
-# Function to embed & compute cosine similarity
-def get_similarity(text1, text2):
-    embeddings = model([text1, text2])
-    vectors = tf.make_ndarray(tf.make_tensor_proto(embeddings))
-    cos_sim = dot(vectors[0], vectors[1]) / (norm(vectors[0]) * norm(vectors[1]))
-    normalized_score = (cos_sim + 1) / 2  # to range [0, 1]
-    return round(float(normalized_score), 3)
+# Clean text
+def clean_text(text):
+    text = re.sub(r'[^a-zA-Z0-9 ]', '', text.lower())
+    return ' '.join([w for w in text.split() if w not in stop_words])
 
-# API Endpoint
-@app.post("/")
-async def compute_similarity(data: TextPair):
-    score = get_similarity(data.text1, data.text2)
-    return {"similarity score": score}
+# Jaccard
+def jaccard_sim(a, b):
+    a, b = set(a.split()), set(b.split())
+    return len(a & b) / len(a | b) if a | b else 0.0
 
-# Run with: uvicorn app:app --host 0.0.0.0 --port 8000
+@app.route("/predict", methods=["POST"])
+def predict():
+    data = request.get_json()
+    text1 = clean_text(data['text1'])
+    text2 = clean_text(data['text2'])
+
+    vec1 = tfidf.transform([text1])
+    vec2 = tfidf.transform([text2])
+
+    cosine = cosine_similarity(vec1, vec2)[0][0]
+    jaccard = jaccard_sim(text1, text2)
+    len_diff = abs(len(text1.split()) - len(text2.split()))
+
+    features = np.array([[cosine, jaccard, len_diff]])
+    score = model.predict(features)[0]
+
+    return jsonify({"similarity score": round(float(score), 4)})
+
+if __name__ == "__main__":
+    app.run(debug=True)
