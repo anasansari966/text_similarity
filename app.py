@@ -1,30 +1,34 @@
-# app.py
-from flask import Flask, request, jsonify
-import joblib
-from sklearn.metrics.pairwise import cosine_similarity
+import uvicorn
+from fastapi import FastAPI, Request
+from pydantic import BaseModel
+import tensorflow_hub as hub
+import tensorflow as tf
+from numpy import dot
+from numpy.linalg import norm
 
-app = Flask(__name__)
-vectorizer = joblib.load('tfidf_vectorizer.pkl')
+# Load USE model once at startup
+model = hub.load("https://tfhub.dev/google/universal-sentence-encoder/4")
 
+# FastAPI app
+app = FastAPI()
 
-def preprocess(text):
-    text = str(text).lower()
-    text = ''.join([c for c in text if c.isalnum() or c.isspace()])
-    return text
+# Request schema
+class TextPair(BaseModel):
+    text1: str
+    text2: str
 
+# Function to embed & compute cosine similarity
+def get_similarity(text1, text2):
+    embeddings = model([text1, text2])
+    vectors = tf.make_ndarray(tf.make_tensor_proto(embeddings))
+    cos_sim = dot(vectors[0], vectors[1]) / (norm(vectors[0]) * norm(vectors[1]))
+    normalized_score = (cos_sim + 1) / 2  # to range [0, 1]
+    return round(float(normalized_score), 3)
 
-@app.route('/similarity', methods=['POST'])
-def get_similarity():
-    data = request.get_json()
-    text1 = preprocess(data['text1'])
-    text2 = preprocess(data['text2'])
+# API Endpoint
+@app.post("/")
+async def compute_similarity(data: TextPair):
+    score = get_similarity(data.text1, data.text2)
+    return {"similarity score": score}
 
-    vec1 = vectorizer.transform([text1])
-    vec2 = vectorizer.transform([text2])
-
-    score = cosine_similarity(vec1, vec2)[0][0]
-    return jsonify({'similarity score': round(score, 2)})
-
-
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
+# Run with: uvicorn app:app --host 0.0.0.0 --port 8000

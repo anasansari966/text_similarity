@@ -1,35 +1,37 @@
-# model.py
+import tensorflow as tf
 import pandas as pd
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.metrics.pairwise import cosine_similarity
-import joblib
+import tensorflow_hub as hub
+from numpy import dot
+from numpy.linalg import norm
 
-# Preprocessing function
-def preprocess(text):
-    text = str(text).lower()
-    text = ''.join([c for c in text if c.isalnum() or c.isspace()])
-    return text
+# Load Universal Sentence Encoder model
+module_url = "https://tfhub.dev/google/universal-sentence-encoder/4"
+model = hub.load(module_url)
 
-# Load data
-df = pd.read_csv('DataNeuron_Text_Similarity.csv')
+def embed(input):
+    return model(input)
 
-# Preprocess text
-df['text1_clean'] = df['text1'].apply(preprocess)
-df['text2_clean'] = df['text2'].apply(preprocess)
+# Read dataset
+Data = pd.read_csv("DataNeuron_Text_Similarity.csv")
 
-# Create TF-IDF vectorizer
-all_texts = pd.concat([df['text1_clean'], df['text2_clean']]).tolist()
-vectorizer = TfidfVectorizer(stop_words='english', ngram_range=(1, 2))
-vectorizer.fit(all_texts)
+# Compute cosine similarity
+similarity_scores = []
+for i in range(len(Data)):
+    sentences = [Data['text1'][i], Data['text2'][i]]
+    embeddings = embed(sentences)
+    vectors = tf.make_ndarray(tf.make_tensor_proto(embeddings))
+    cos_sim = dot(vectors[0], vectors[1]) / (norm(vectors[0]) * norm(vectors[1]))
+    similarity_scores.append(cos_sim)
 
-# Save vectorizer for API
-joblib.dump(vectorizer, 'tfidf_vectorizer.pkl')
+# Add similarity scores to dataframe
+Data['Similarity_Score'] = similarity_scores
 
-# Calculate similarity scores
-def calculate_similarity(row):
-    vec1 = vectorizer.transform([row['text1_clean']])
-    vec2 = vectorizer.transform([row['text2_clean']])
-    return cosine_similarity(vec1, vec2)[0][0]
+# Normalize scores to range [0, 1]
+Data['Similarity_Score'] = Data['Similarity_Score'] + 1  # from [-1, 1] to [0, 2]
+Data['Similarity_Score'] = Data['Similarity_Score'] / Data['Similarity_Score'].abs().max()
 
-df['similarity_score'] = df.apply(calculate_similarity, axis=1)
-df.to_csv('results.csv', index=False)
+# Create submission with auto-generated Unique_ID
+Data['Unique_ID'] = range(len(Data))
+Submission = Data[['Unique_ID', 'Similarity_Score']]
+Submission.set_index("Unique_ID", inplace=True)
+Submission.to_csv("Submission.csv")
